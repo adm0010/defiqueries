@@ -1,0 +1,54 @@
+WITH deltas as ((SELECT evt_block_time, evt_index, "from" as lp, -value as delta, contract_address as pair, 'v2' as uniswap_version
+    FROM uniswap_v2."Pair_evt_Transfer")
+    UNION ALL
+    (SELECT evt_block_time, evt_index, "to" as lp, value as delta, contract_address as pair, 'v2' as uniswap_version
+    FROM uniswap_v2."Pair_evt_Transfer")
+    UNION ALL
+    (SELECT evt_block_time, evt_index, "_from" as lp, -_value as delta, contract_address as pair, 'v1' as uniswap_version
+    FROM uniswap."Exchange_evt_Transfer")
+    UNION ALL
+    (SELECT evt_block_time, evt_index, "_to" as lp, _value as delta, contract_address as pair, 'v1' as uniswap_version
+    FROM uniswap."Exchange_evt_Transfer")), balances as (SELECT *, SUM(delta) OVER (
+    PARTITION BY lp, pair
+    ORDER BY evt_block_time, evt_index
+    ) as balance FROM deltas ORDER BY evt_block_time, evt_index, delta), delta_pools as 
+    (SELECT *, (CASE 
+        WHEN delta = 0 OR lp = '\x0000000000000000000000000000000000000000' THEN 0
+        WHEN delta = balance THEN 1
+        WHEN balance = 0 THEN -1
+        ELSE 0
+        END) as delta_pools FROM balances), lp_pools as
+    (SELECT *, 
+    SUM(CASE WHEN uniswap_version='v1' THEN delta_pools ELSE 0 END) OVER (PARTITION BY lp ORDER BY evt_block_time, evt_index) as lp_v1_pools,
+    SUM(CASE WHEN uniswap_version='v2' THEN delta_pools ELSE 0 END) OVER (PARTITION BY lp ORDER BY evt_block_time, evt_index) as lp_v2_pools
+    FROM delta_pools), delta_lps as (SELECT *, (CASE 
+        WHEN uniswap_version='v2' OR lp_v2_pools != 0 THEN 0
+        WHEN lp_v1_pools = 1 AND delta_pools = 1 THEN 1
+        WHEN lp_v1_pools = 0 AND delta_pools = -1 THEN -1
+        ELSE 0
+        END) as delta_v1_lps,
+        (CASE 
+        WHEN uniswap_version='v1' OR lp_v1_pools != 0 THEN 0
+        WHEN lp_v2_pools = 1 AND delta_pools = 1 THEN 1
+        WHEN lp_v2_pools = 0 AND delta_pools = -1 THEN -1
+        ELSE 0
+        END) as delta_v2_lps,
+        (CASE 
+        WHEN uniswap_version='v2' AND lp_v1_pools != 0 AND lp_v2_pools = 1 AND delta_pools = 1 THEN 1
+        WHEN uniswap_version='v1' AND lp_v2_pools != 0 AND lp_v1_pools = 1 AND delta_pools = 1 THEN 1
+        WHEN uniswap_version='v2' AND lp_v1_pools != 0 AND lp_v2_pools = 0 AND delta_pools = -1 THEN -1
+        WHEN uniswap_version='v1' AND lp_v2_pools != 0 AND lp_v1_pools = 0 AND delta_pools = -1 THEN -1
+        ELSE 0
+        END) as delta_both_lps
+        FROM lp_pools), lps as
+    (SELECT *, 
+        date_trunc('day', evt_block_time) as day, 
+     --   SUM(delta_v1_lps) OVER (ORDER BY evt_block_time, evt_index) as v1_lps, 
+        SUM(delta_v2_lps) OVER (ORDER BY evt_block_time, evt_index) as v2_lps
+      --  SUM(delta_both_lps) OVER (ORDER BY evt_block_time, evt_index) as both_lps
+    FROM delta_lps
+    WHERE delta_v1_lps != 0 OR delta_v2_lps != 0 OR delta_both_lps != 0
+    ORDER BY evt_block_time, evt_index)
+    SELECT DISTINCT ON (day) day, v2_lps
+    FROM lps
+    ORDER BY day, evt_block_time
