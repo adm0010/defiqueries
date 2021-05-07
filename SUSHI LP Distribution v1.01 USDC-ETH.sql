@@ -1,4 +1,4 @@
-with dailey as  
+with daily as  
         (select
             the_day, 
             (eth * 2 * a.price / 1e17) as val
@@ -22,11 +22,11 @@ with dailey as
             GROUP BY day)
         a ON x.the_day = a.day)
     SELECT 
-    POWER(2, FLOOR(LOG(2, (("output_liquidity"/1.05994e18) * dailey.val::integer)))) as liquidity,
+    POWER(2, FLOOR(LOG(2, (("output_liquidity"/1.05994e18) * daily.val::integer)))) as liquidity,
     COUNT(*) AS trades 
     FROM 
     sushi."Router02_call_addLiquidity" slp
-    left join dailey on date_trunc('day',slp.call_block_time) = dailey.the_day
+    left join daily on date_trunc('day',slp.call_block_time) = daily.the_day
     WHERE ("output_liquidity"/1.05994e18) * dailey.val > 10
     AND (("tokenA" = '\xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' AND "tokenB" = '\xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2') OR
    ("tokenB" = '\xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' AND "tokenA" = '\xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'))
