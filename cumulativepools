@@ -1,0 +1,16 @@
+--UNISWAP VERSION--
+SELECT date_trunc('hour', tx.block_time),
+count (*) over (order by  date_trunc('hour',tx.block_time))  as "New Liquidity Pools"
+FROM uniswap_v2."Factory_evt_PairCreated" u
+LEFT JOIN ethereum.transactions tx ON tx.hash = u.evt_tx_hash
+GROUP BY 1
+ORDER BY 1;
+
+--SUSHISWAP VERSION--
+SELECT date_trunc('hour', tx.block_time),
+count (*) over (order by  date_trunc('hour',tx.block_time))  as "New Liquidity Pools"
+FROM sushi."Factory_evt_PairCreated" u
+LEFT JOIN ethereum.transactions tx ON tx.hash = u.evt_tx_hash
+GROUP BY 1
+ORDER BY 1;
+
